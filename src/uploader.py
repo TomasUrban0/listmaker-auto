@@ -1,0 +1,146 @@
+import os
+
+from .config import (
+    ARTISTS_FOLDER_ID,
+    DRIVE_TARGET_FOLDER,
+    LISTS_FOLDER,
+    LOCAL_FOLDER,
+    PARENT_DRIVE_ID,
+)
+from .drive_auth import get_drive
+
+
+class GDriveUploader:
+    def __init__(self, drive=None):
+        print("Inicializando Uploader a Google Drive...")
+        self.drive = drive or get_drive()
+
+    @staticmethod
+    def escape_query_string(text):
+        return text.replace("'", "\\'")
+
+    def find_or_create_folder(self, folder_name, parent_id):
+        safe_name = self.escape_query_string(folder_name)
+        query = (
+            f"title='{safe_name}' and '{parent_id}' in parents "
+            f"and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        )
+        try:
+            file_list = self.drive.ListFile({"q": query}).GetList()
+        except Exception as e:
+            print(f"   Error buscando carpeta '{folder_name}': {e}")
+            file_list = []
+
+        if file_list:
+            print(f"   Carpeta Drive existente: {folder_name}")
+            return file_list[0]["id"]
+
+        print(f"   Creando nueva carpeta en Drive: {folder_name}")
+        folder = self.drive.CreateFile({
+            "title": folder_name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [{"id": parent_id}],
+        })
+        folder.Upload()
+        return folder["id"]
+
+    def upload_recursive(self, local_path, current_parent_drive_id):
+        drive_items = {}
+        try:
+            file_list = self.drive.ListFile(
+                {"q": f"'{current_parent_drive_id}' in parents and trashed=false"}
+            ).GetList()
+            for item in file_list:
+                drive_items[item["title"]] = item
+        except Exception as e:
+            print(f"   Error listando contenidos de carpeta: {e}")
+            return
+
+        for item_name in os.listdir(local_path):
+            local_item_path = os.path.join(local_path, item_name)
+
+            if os.path.isdir(local_item_path):
+                print(f"\nProcesando directorio: {item_name}")
+                if (item_name in drive_items
+                        and drive_items[item_name]["mimeType"] == "application/vnd.google-apps.folder"):
+                    drive_folder_id = drive_items[item_name]["id"]
+                else:
+                    drive_folder_id = self.find_or_create_folder(item_name, current_parent_drive_id)
+                self.upload_recursive(local_item_path, drive_folder_id)
+            else:
+                if not item_name.endswith(".pdf"):
+                    continue
+
+                if (item_name in drive_items
+                        and drive_items[item_name]["mimeType"] != "application/vnd.google-apps.folder"):
+                    print(f"   Actualizando: {item_name}")
+                    try:
+                        gfile = self.drive.CreateFile({"id": drive_items[item_name]["id"]})
+                        gfile.SetContentFile(local_item_path)
+                        gfile.Upload()
+                    except Exception as e:
+                        print(f"      Error actualizando archivo: {e}")
+                else:
+                    print(f"   Subiendo nuevo: {item_name}")
+                    try:
+                        gfile = self.drive.CreateFile({
+                            "title": item_name,
+                            "parents": [{"id": current_parent_drive_id}],
+                        })
+                        gfile.SetContentFile(local_item_path)
+                        gfile.Upload()
+                    except Exception as e:
+                        print(f"      Error subiendo archivo: {e}")
+
+    def _resolve_main_folder(self):
+        if ARTISTS_FOLDER_ID:
+            print(f"Usando ARTISTS_FOLDER_ID: {ARTISTS_FOLDER_ID}")
+            return ARTISTS_FOLDER_ID
+        return self.find_or_create_folder(DRIVE_TARGET_FOLDER, PARENT_DRIVE_ID)
+
+    def run(self):
+        main_drive_folder_id = self._resolve_main_folder()
+
+        if not os.path.exists(LOCAL_FOLDER):
+            print(f"Error: No se encuentra la carpeta local '{LOCAL_FOLDER}'.")
+            # Igual subimos lists/ si existe — los deltas no dependen de Artists/
+        else:
+            print("Iniciando sincronización principal a Google Drive...")
+            print(f"\nSincronizando PDFs de la carpeta '{LOCAL_FOLDER}'...")
+            self.upload_recursive(LOCAL_FOLDER, main_drive_folder_id)
+
+        if os.path.exists(LISTS_FOLDER):
+            print(f"\nSincronizando archivos de configuración e histórico ({LISTS_FOLDER})...")
+            lists_drive_folder_id = self.find_or_create_folder(LISTS_FOLDER, main_drive_folder_id)
+
+            drive_lists_items = {}
+            try:
+                file_list = self.drive.ListFile(
+                    {"q": f"'{lists_drive_folder_id}' in parents and trashed=false"}
+                ).GetList()
+                for item in file_list:
+                    drive_lists_items[item["title"]] = item
+            except Exception as e:
+                print(f"   Error listando contenidos de 'lists' en Drive: {e}")
+
+            for item_name in os.listdir(LISTS_FOLDER):
+                file_path = os.path.join(LISTS_FOLDER, item_name)
+                if os.path.isfile(file_path):
+                    try:
+                        if item_name in drive_lists_items:
+                            print(f"   Actualizando: {item_name} en Drive")
+                            gfile = self.drive.CreateFile({"id": drive_lists_items[item_name]["id"]})
+                        else:
+                            print(f"   Subiendo nuevo: {item_name} a Drive")
+                            gfile = self.drive.CreateFile({
+                                "title": item_name,
+                                "parents": [{"id": lists_drive_folder_id}],
+                            })
+                        gfile.SetContentFile(file_path)
+                        gfile.Upload()
+                    except Exception as e:
+                        print(f"   Error subiendo {item_name}: {e}")
+        else:
+            print(f"\nNo se encontró la carpeta local '{LISTS_FOLDER}'. Se omitirá su respaldo.")
+
+        print("\nSincronización completa.")

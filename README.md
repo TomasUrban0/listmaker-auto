@@ -41,6 +41,7 @@ lists/           estado runtime (gitignored, vive en Drive)
 | Secret              | Qué es                                                       |
 |---------------------|--------------------------------------------------------------|
 | `GDRIVE_SA_JSON`    | JSON de la Service Account con acceso a la carpeta `Artists` |
+| `ARTISTS_FOLDER_ID` | ID de la carpeta `Artists` en Drive (la SA no la ve bajo `root`) |
 | `QQ_COOKIES_B64`    | `qq_verified_session.cookies` codificado en base64           |
 | `ARTISTS_TXT_B64`   | (opcional) `artists.txt` en base64 si no quieres versionarlo |
 
