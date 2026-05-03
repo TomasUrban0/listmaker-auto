@@ -1,6 +1,8 @@
 # --- Secretos / credenciales (NUNCA commitear) ---
 mycreds.txt
 service_account.json
+client_secrets.json
+lists/client_secrets.json
 *.cookies
 .env
 .env.*
@@ -29,3 +31,4 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+.claude/
