@@ -1,0 +1,31 @@
+# --- Secretos / credenciales (NUNCA commitear) ---
+mycreds.txt
+service_account.json
+*.cookies
+.env
+.env.*
+!.env.example
+
+# --- Estado runtime (vive en Drive, no en git) ---
+lists/history.json
+lists/deltas.txt
+lists/deltas.jsonl
+lists/failed_artists.json
+lists/artists_index.json
+lists/final_list.txt
+Artists/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,6 @@
+selenium>=4.15
+beautifulsoup4>=4.12
+requests>=2.31
+PyDrive2>=1.19
+google-auth>=2.23
+oauth2client>=4.1
