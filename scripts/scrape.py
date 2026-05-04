@@ -22,7 +22,9 @@ def main():
         bot.save_and_compare_history()
         exit_code = 130
     except RuntimeError as e:
-        print(f"\nAbortado por rate limit: {e}")
+        # RuntimeError = abort intencionado: rate limit persistente,
+        # tasa de fallos >50%, etc. Guardamos lo que tengamos y salimos != 0.
+        print(f"\nAbortado: {e}")
         bot.save_and_compare_history()
         exit_code = 3
     finally:

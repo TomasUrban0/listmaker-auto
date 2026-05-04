@@ -467,6 +467,19 @@ class QQListMaker:
                 if not self._driver_alive():
                     self._recover_driver()
 
+        # Sanity check de fin de run: si la mayoría de artistas falló es muy
+        # probable que las cookies hayan caducado, el foro haya cambiado el HTML,
+        # o nos hayan bloqueado la IP. Abortamos con error para que el workflow
+        # falle y GitHub mande email — evita la trampa silenciosa de un job
+        # "verde" que en realidad lleva semanas sin scrapear nada.
+        total = len(urls)
+        failed = len(self.failed_artists)
+        if total >= 5 and failed / total > 0.5:
+            raise RuntimeError(
+                f"Tasa de fallos {failed}/{total} ({failed/total:.0%}) > 50%. "
+                "Posibles causas: cookies caducadas, foro cambió, IP bloqueada."
+            )
+
     def save_failed_report(self):
         if not self.failed_artists:
             return
