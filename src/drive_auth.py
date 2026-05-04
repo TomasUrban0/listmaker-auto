@@ -1,19 +1,54 @@
-import json
+"""Authentication for Google Drive via PyDrive2.
+
+Two modes, in priority order:
+
+1. **OAuth user credentials** (preferred).
+   Uses the user's own quota — required for personal Drive accounts since
+   Service Accounts can't *create* new files (only update existing ones).
+   Reads ``GDRIVE_OAUTH_CLIENT_ID``, ``GDRIVE_OAUTH_CLIENT_SECRET`` and
+   ``GDRIVE_OAUTH_REFRESH_TOKEN`` env-vars. The refresh token is obtained
+   once locally with ``scripts/auth_oauth.py`` and stored as a GitHub secret.
+
+2. **Service Account** (fallback).
+   Reads ``GDRIVE_SA_JSON`` env-var or a local ``service_account.json``.
+   Works for *reading* and *updating* files in shared folders, but fails
+   on file creation in personal Drive (no storage quota). Kept here for
+   testing/back-compat.
+"""
 import os
 
+from oauth2client.client import OAuth2Credentials
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 
 
-def get_drive(service_account_json_path: str | None = None) -> GoogleDrive:
-    """Authenticate with Google Drive using a Service Account.
+_TOKEN_URI = "https://oauth2.googleapis.com/token"
+_OAUTH_SCOPE = ["https://www.googleapis.com/auth/drive"]
 
-    Resolution order for the SA credentials:
-    1. Explicit *service_account_json_path* argument.
-    2. ``GDRIVE_SA_JSON`` env-var containing the raw JSON string
-       (GitHub Actions injects secrets this way).
-    3. A ``service_account.json`` file in the working directory.
+
+def _get_drive_oauth(client_id: str, client_secret: str, refresh_token: str) -> GoogleDrive:
+    """Build a Drive client from a stored OAuth refresh token.
+
+    PyDrive2 will use the refresh token to obtain a fresh access token on
+    every API call; nothing else needs to persist between runs.
     """
+    creds = OAuth2Credentials(
+        access_token=None,
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=refresh_token,
+        token_expiry=None,
+        token_uri=_TOKEN_URI,
+        user_agent=None,
+        revoke_uri=None,
+    )
+    gauth = GoogleAuth(settings={"oauth_scope": _OAUTH_SCOPE})
+    gauth.credentials = creds
+    gauth.Refresh()  # mint an access token from the refresh token immediately
+    return GoogleDrive(gauth)
+
+
+def _get_drive_sa(service_account_json_path: str | None) -> GoogleDrive:
     sa_path = service_account_json_path
     if sa_path is None:
         raw_json = os.environ.get("GDRIVE_SA_JSON")
@@ -25,20 +60,34 @@ def get_drive(service_account_json_path: str | None = None) -> GoogleDrive:
             sa_path = "service_account.json"
         else:
             raise RuntimeError(
-                "No Service Account credentials found. "
-                "Set GDRIVE_SA_JSON env-var or provide service_account.json."
+                "No credentials found. Configure either OAuth env-vars "
+                "(GDRIVE_OAUTH_CLIENT_ID, GDRIVE_OAUTH_CLIENT_SECRET, "
+                "GDRIVE_OAUTH_REFRESH_TOKEN) or a Service Account "
+                "(GDRIVE_SA_JSON env-var or service_account.json file)."
             )
 
     gauth = GoogleAuth(settings={
         "client_config_backend": "service",
-        "service_config": {
-            "client_json_file_path": sa_path,
-        },
-        "oauth_scope": ["https://www.googleapis.com/auth/drive"],
+        "service_config": {"client_json_file_path": sa_path},
+        "oauth_scope": _OAUTH_SCOPE,
     })
     gauth.ServiceAuth()
+    return GoogleDrive(gauth)
 
-    drive = GoogleDrive(gauth)
+
+def get_drive(service_account_json_path: str | None = None) -> GoogleDrive:
+    """Authenticate with Google Drive. OAuth preferred, SA fallback."""
+    client_id = os.environ.get("GDRIVE_OAUTH_CLIENT_ID")
+    client_secret = os.environ.get("GDRIVE_OAUTH_CLIENT_SECRET")
+    refresh_token = os.environ.get("GDRIVE_OAUTH_REFRESH_TOKEN")
+
+    if client_id and client_secret and refresh_token:
+        print("Auth mode: OAuth user credentials")
+        drive = _get_drive_oauth(client_id, client_secret, refresh_token)
+    else:
+        print("Auth mode: Service Account (fallback)")
+        drive = _get_drive_sa(service_account_json_path)
+
     try:
         email = drive.GetAbout().get("user", {}).get("emailAddress", "?")
         print(f"Drive account: {email}")

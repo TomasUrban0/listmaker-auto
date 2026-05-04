@@ -38,12 +38,20 @@ lists/           estado runtime (gitignored, vive en Drive)
 
 ## Secretos requeridos en GitHub
 
-| Secret              | Qué es                                                       |
-|---------------------|--------------------------------------------------------------|
-| `GDRIVE_SA_JSON`    | JSON de la Service Account con acceso a la carpeta `Artists` |
-| `ARTISTS_FOLDER_ID` | ID de la carpeta `Artists` en Drive (la SA no la ve bajo `root`) |
-| `QQ_COOKIES_B64`    | `qq_verified_session.cookies` codificado en base64           |
-| `ARTISTS_TXT_B64`   | (opcional) `artists.txt` en base64 si no quieres versionarlo |
+| Secret                        | Qué es                                                       |
+|-------------------------------|--------------------------------------------------------------|
+| `GDRIVE_OAUTH_CLIENT_ID`      | OAuth Client ID (Desktop app) creado en GCP                  |
+| `GDRIVE_OAUTH_CLIENT_SECRET`  | OAuth Client Secret correspondiente                          |
+| `GDRIVE_OAUTH_REFRESH_TOKEN`  | Refresh token obtenido con `scripts/auth_oauth.py` (1 vez)   |
+| `ARTISTS_FOLDER_ID`           | ID de la carpeta `Artists` en Drive                          |
+| `QQ_COOKIES_B64`              | `qq_verified_session.cookies` codificado en base64           |
+| `ARTISTS_TXT_B64`             | (opcional) `artists.txt` en base64 si no quieres versionarlo |
+| `GDRIVE_SA_JSON`              | (opcional, fallback) JSON de Service Account                 |
+
+**Por qué OAuth user y no Service Account**: las SAs no tienen cuota de
+almacenamiento propia, así que pueden actualizar archivos existentes pero
+no crear nuevos en Drive personal. Eso rompe el upload de PDFs nuevos y de
+`deltas.jsonl`. OAuth user delegation usa la cuota del usuario y funciona.
 
 ## Tareas pendientes
 
