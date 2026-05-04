@@ -71,26 +71,23 @@ class GDriveUploader:
                 if not item_name.endswith(".pdf"):
                     continue
 
+                # Capítulos PDF son inmutables: si ya existen en Drive con el
+                # mismo nombre, son el mismo contenido. Saltar evita re-subir
+                # cientos de MB cada run.
                 if (item_name in drive_items
                         and drive_items[item_name]["mimeType"] != "application/vnd.google-apps.folder"):
-                    print(f"   Actualizando: {item_name}")
-                    try:
-                        gfile = self.drive.CreateFile({"id": drive_items[item_name]["id"]})
-                        gfile.SetContentFile(local_item_path)
-                        gfile.Upload()
-                    except Exception as e:
-                        print(f"      Error actualizando archivo: {e}")
-                else:
-                    print(f"   Subiendo nuevo: {item_name}")
-                    try:
-                        gfile = self.drive.CreateFile({
-                            "title": item_name,
-                            "parents": [{"id": current_parent_drive_id}],
-                        })
-                        gfile.SetContentFile(local_item_path)
-                        gfile.Upload()
-                    except Exception as e:
-                        print(f"      Error subiendo archivo: {e}")
+                    continue
+
+                print(f"   Subiendo nuevo: {item_name}")
+                try:
+                    gfile = self.drive.CreateFile({
+                        "title": item_name,
+                        "parents": [{"id": current_parent_drive_id}],
+                    })
+                    gfile.SetContentFile(local_item_path)
+                    gfile.Upload()
+                except Exception as e:
+                    print(f"      Error subiendo archivo: {e}")
 
     def _resolve_main_folder(self):
         if ARTISTS_FOLDER_ID:
@@ -101,13 +98,12 @@ class GDriveUploader:
     def run(self):
         main_drive_folder_id = self._resolve_main_folder()
 
-        if not os.path.exists(LOCAL_FOLDER):
-            print(f"Error: No se encuentra la carpeta local '{LOCAL_FOLDER}'.")
-            # Igual subimos lists/ si existe — los deltas no dependen de Artists/
-        else:
-            print("Iniciando sincronización principal a Google Drive...")
-            print(f"\nSincronizando PDFs de la carpeta '{LOCAL_FOLDER}'...")
+        if os.path.exists(LOCAL_FOLDER):
+            print(f"Sincronizando PDFs nuevos de '{LOCAL_FOLDER}' a Drive...")
             self.upload_recursive(LOCAL_FOLDER, main_drive_folder_id)
+        else:
+            # Normal cuando el run no descargó capítulos nuevos.
+            print(f"No hay carpeta local '{LOCAL_FOLDER}' (sin capítulos nuevos este run).")
 
         if os.path.exists(LISTS_FOLDER):
             print(f"\nSincronizando archivos de configuración e histórico ({LISTS_FOLDER})...")

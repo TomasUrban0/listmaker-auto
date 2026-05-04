@@ -64,7 +64,16 @@ class GDriveDownloader:
                         print(f"      Error descargando archivo: {e}")
 
     def run(self):
-        print("Iniciando recuperación desde Google Drive...")
+        """Sincroniza solo `lists/` desde Drive — el estado runtime que cada
+        run necesita (cookies, history.json, deltas.jsonl, artists_index.json).
+
+        Antes bajábamos también todo `Artists/` para que el writer pudiera
+        saltarse PDFs ya descargados via os.path.exists. Pero los capítulos
+        son inmutables y deltas.jsonl es la fuente canónica de qué es nuevo,
+        así que el local cache es redundante. Bajar 410 MB cada run no aportaba
+        nada y disparaba rate limits de la Drive API.
+        """
+        print("Iniciando recuperación de estado desde Google Drive...")
         if ARTISTS_FOLDER_ID:
             main_drive_folder_id = ARTISTS_FOLDER_ID
             print(f"Usando ARTISTS_FOLDER_ID: {main_drive_folder_id}")
@@ -74,14 +83,6 @@ class GDriveDownloader:
             print(f"Error: No se encontró la carpeta '{DRIVE_TARGET_FOLDER}' en Google Drive.")
             return
 
-        print(f"\nSincronizando PDFs (bajando archivos faltantes a '{LOCAL_FOLDER}')...")
-        self.download_recursive(
-            main_drive_folder_id,
-            LOCAL_FOLDER,
-            skip_folder_names=[LISTS_FOLDER],
-            force_overwrite=False,
-        )
-
         lists_drive_folder_id = self.find_folder_in_drive(LISTS_FOLDER, main_drive_folder_id)
         if lists_drive_folder_id:
             print(f"\nRestaurando archivos de configuración e histórico en '{LISTS_FOLDER}'...")
@@ -89,4 +90,4 @@ class GDriveDownloader:
         else:
             print(f"\nNo se encontró la carpeta '{LISTS_FOLDER}' respaldada en Drive.")
 
-        print("\nRecuperación y sincronización completada.")
+        print("\nRecuperación completada.")
