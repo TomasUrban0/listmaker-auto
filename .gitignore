@@ -3,6 +3,8 @@ mycreds.txt
 service_account.json
 client_secrets.json
 lists/client_secrets.json
+oauth_client.json
+oauth_token.json
 *.cookies
 .env
 .env.*
