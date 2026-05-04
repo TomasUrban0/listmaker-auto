@@ -1,6 +1,6 @@
 # listmaker-auto
 
-Automatización del pipeline de scraping del foro QQ + descarga de PDFs + sincronización con Google Drive, ejecutándose como cron en GitHub Actions.
+Automatización del pipeline de scraping + descarga de PDFs + sincronización con Google Drive, ejecutándose como cron en GitHub Actions.
 
 Origen: port del notebook `listmaker.ipynb` a scripts ejecutables en CI.
 
