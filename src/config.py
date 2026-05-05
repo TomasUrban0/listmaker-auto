@@ -11,6 +11,7 @@ DELTA_JSONL_FILE = os.path.join(LIST_DIR, "deltas.jsonl")
 OUTPUT_FILE = os.path.join(LIST_DIR, "final_list.txt")
 FAILED_FILE = os.path.join(LIST_DIR, "failed_artists.json")
 ARTISTS_INDEX_FILE = os.path.join(LIST_DIR, "artists_index.json")
+SEEN_REMOVALS_FILE = os.path.join(LIST_DIR, "seen_removals.json")
 
 LOCAL_FOLDER = "Artists"
 DRIVE_TARGET_FOLDER = "Artists"

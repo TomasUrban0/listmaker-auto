@@ -30,6 +30,7 @@ from .config import (
     MAX_PAGES_PER_LOOP,
     OUTPUT_FILE,
     RATE_LIMIT_BACKOFF,
+    SEEN_REMOVALS_FILE,
 )
 
 
@@ -491,6 +492,38 @@ class QQListMaker:
         except Exception as e:
             print(f"No se pudo guardar el reporte de fallos: {e}")
 
+    def _load_seen_removals(self):
+        """Devuelve los sets de removals ya reportados en runs anteriores.
+
+        Sirve para no re-reportar las mismas eliminaciones cada día
+        (las eliminaciones se mantienen en history.json por diseño,
+        así que una eliminación detectada hoy seguiría detectándose
+        mañana sin este filtro).
+        """
+        empty = {"threads_removed": set(), "chapters_removed": set()}
+        if not os.path.exists(SEEN_REMOVALS_FILE):
+            return empty
+        try:
+            with open(SEEN_REMOVALS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return {
+                "threads_removed": set(data.get("threads_removed", [])),
+                "chapters_removed": set(data.get("chapters_removed", [])),
+            }
+        except Exception as e:
+            print(f"{SEEN_REMOVALS_FILE} corrupto, reseteando: {e}")
+            return empty
+
+    def _save_seen_removals(self, seen):
+        try:
+            with open(SEEN_REMOVALS_FILE, "w", encoding="utf-8") as f:
+                json.dump({
+                    "threads_removed": sorted(seen["threads_removed"]),
+                    "chapters_removed": sorted(seen["chapters_removed"]),
+                }, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"No se pudo guardar {SEEN_REMOVALS_FILE}: {e}")
+
     def save_artists_index(self):
         if not self.author_url_map:
             return
@@ -580,32 +613,67 @@ class QQListMaker:
                             old_chapters.append(new_ch)
                         structured["chapters_added"].setdefault(artist, {})[thread_title] = list(new_chapters)
 
-        # Eliminaciones (solo se reportan, no se borran)
+        # Eliminaciones — solo se reportan la PRIMERA vez. Como history.json
+        # nunca se purga, sin este filtro las mismas eliminaciones se
+        # repetirían en cada run para siempre.
+        seen = self._load_seen_removals()
+
+        # Si un thread/cap aparece de nuevo en el scrape, lo quitamos del set:
+        # si vuelve a desaparecer en el futuro queremos volver a reportarlo.
+        for artist, threads in self.scraped_data.items():
+            for thread_title, chapters in threads.items():
+                seen["threads_removed"].discard(f"{artist}|{thread_title}")
+                for ch in chapters:
+                    seen["chapters_removed"].discard(f"{artist}|{thread_title}|{ch}")
+
         for artist, old_threads in old_data.items():
             if artist not in self.scraped_data:
                 continue
             new_threads = self.scraped_data[artist]
 
-            removed_threads = [th for th in old_threads if th not in new_threads]
-            for th in removed_threads:
+            # Threads desaparecidos
+            new_thread_removals = []
+            for th in old_threads:
+                if th in new_threads:
+                    continue
+                key = f"{artist}|{th}"
+                if key in seen["threads_removed"]:
+                    continue  # ya reportado en run anterior
+                new_thread_removals.append(th)
+                seen["threads_removed"].add(key)
+
+            for th in new_thread_removals:
                 deltas.append(f"\n[-] THREAD ELIMINADO ({artist}): {th}")
                 deltas.append("    (se mantiene en history.json, solo reporte)")
                 structured["threads_removed"].setdefault(artist, []).append(th)
 
+            # Capítulos desaparecidos dentro de threads que siguen existiendo
             for thread_title, old_chapters in old_threads.items():
                 if thread_title not in new_threads:
                     continue
                 new_chapters = new_threads[thread_title]
                 if not new_chapters:
-                    continue
+                    continue  # scrape vacío → probable fallo, no asumir eliminación
                 new_set = set(new_chapters)
-                removed_chapters = [ch for ch in old_chapters if ch not in new_set]
-                if removed_chapters:
+
+                new_chapter_removals = []
+                for ch in old_chapters:
+                    if ch in new_set:
+                        continue
+                    key = f"{artist}|{thread_title}|{ch}"
+                    if key in seen["chapters_removed"]:
+                        continue
+                    new_chapter_removals.append(ch)
+                    seen["chapters_removed"].add(key)
+
+                if new_chapter_removals:
                     deltas.append(f"\n[-] CAPÍTULOS ELIMINADOS ({artist} - {thread_title}):")
-                    for ch in removed_chapters:
+                    for ch in new_chapter_removals:
                         deltas.append(f"    < Eliminado: {ch}")
                     deltas.append("    (se mantienen en history.json, solo reporte)")
-                    structured["chapters_removed"].setdefault(artist, {})[thread_title] = list(removed_chapters)
+                    structured["chapters_removed"].setdefault(artist, {})[thread_title] = list(new_chapter_removals)
+
+        self._save_seen_removals(seen)
 
         with open(DELTA_FILE, "a", encoding="utf-8") as f:
             f.write("\n" + "=" * 60 + "\n")
