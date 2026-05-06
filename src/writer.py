@@ -78,13 +78,15 @@ class QQWriter:
             body = self.driver.find_element(By.TAG_NAME, "body").text[:1500].lower()
         except Exception:
             return False
+        # NB: no incluimos "429" como signal — esa subcadena aparece en muchos
+        # sitios benignos del HTML (IDs de thread, números de página, conteos).
+        # Antes había thread-36429 que disparaba falso positivo permanente.
         signals = (
             "too many requests",
             "rate limit",
             "you are being rate limited",
             "you have been temporarily blocked",
             "slow down",
-            "429",
         )
         return any(s in title or s in body for s in signals)
 
