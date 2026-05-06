@@ -27,7 +27,8 @@ from .config import (
     DELTA_JSONL_FILE,
     LOCAL_FOLDER,
     MAX_PAGES_PER_LOOP,
-    RATE_LIMIT_BACKOFF,
+    PENDING_CHAPTERS_FILE,
+    WRITER_RATE_LIMIT_BACKOFF,
 )
 
 
@@ -89,10 +90,10 @@ class QQWriter:
 
     def _handle_rate_limit(self):
         self._rl_attempts += 1
-        if self._rl_attempts > len(RATE_LIMIT_BACKOFF):
+        if self._rl_attempts > len(WRITER_RATE_LIMIT_BACKOFF):
             print("   Rate limit persistente — abortando.")
             raise RuntimeError("Rate limit persistente")
-        wait = RATE_LIMIT_BACKOFF[self._rl_attempts - 1]
+        wait = WRITER_RATE_LIMIT_BACKOFF[self._rl_attempts - 1]
         print(f"   Posible rate limit — esperando {wait}s (intento {self._rl_attempts}).")
         time.sleep(wait)
 
@@ -181,6 +182,60 @@ class QQWriter:
         except Exception as e:
             print(f"      No se pudo extraer fecha/hora del post: {e}")
             return ""
+
+    def _load_pending(self):
+        """Carga capítulos pendientes de runs anteriores que no se descargaron.
+        Formato: {artist: {thread: [chapter_names]}}. Nunca contiene "__ALL__"
+        (lo expandimos a nombres concretos antes de persistir).
+        """
+        if not os.path.exists(PENDING_CHAPTERS_FILE):
+            return {}
+        try:
+            with open(PENDING_CHAPTERS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            print(f"{PENDING_CHAPTERS_FILE} corrupto, reseteando: {e}")
+            return {}
+
+    def _save_pending(self, pending):
+        """Persiste pending. Limpia entradas vacías antes de guardar."""
+        clean = {}
+        for artist, threads in pending.items():
+            clean_threads = {t: list(c) for t, c in threads.items() if c}
+            if clean_threads:
+                clean[artist] = clean_threads
+        try:
+            with open(PENDING_CHAPTERS_FILE, "w", encoding="utf-8") as f:
+                json.dump(clean, f, indent=2, ensure_ascii=False)
+            if clean:
+                count = sum(len(c) for t in clean.values() for c in t.values())
+                print(f"{count} capítulos pendientes guardados en {PENDING_CHAPTERS_FILE}")
+            else:
+                print("Sin capítulos pendientes (todos los intentos exitosos).")
+        except Exception as e:
+            print(f"No se pudo guardar pending: {e}")
+
+    def _merge_pending_into_queue(self, pending, queue):
+        """Combina pendientes (prioritarios) con la queue del último delta."""
+        merged = {}
+        for artist, threads in pending.items():
+            merged[artist] = {t: list(c) for t, c in threads.items()}
+        for artist, threads in queue.items():
+            merged.setdefault(artist, {})
+            for thread, chapters in threads.items():
+                existing = merged[artist].get(thread, [])
+                if "__ALL__" in chapters or "__ALL__" in existing:
+                    merged[artist][thread] = ["__ALL__"]
+                else:
+                    merged[artist][thread] = list(dict.fromkeys(existing + list(chapters)))
+        return merged
+
+    def _mark_done(self, pending, artist, thread, chapter):
+        """Quita un capítulo del pending tras descarga exitosa."""
+        if artist in pending and thread in pending[artist]:
+            if chapter in pending[artist][thread]:
+                pending[artist][thread].remove(chapter)
 
     def parse_deltas_jsonl(self):
         """Lee la última línea del deltas.jsonl. Devuelve None si no hay JSONL utilizable."""
@@ -621,107 +676,150 @@ class QQWriter:
         if not self.load_cookies():
             return
 
-        queue = self.parse_deltas_jsonl()
-        if queue is None:
+        # Estrategia de queue:
+        # 1. Cargamos pending_chapters.json (capítulos que fallaron en runs previos).
+        # 2. Cargamos el último delta (capítulos nuevos detectados por scrape hoy).
+        # 3. Mergeamos: pending tienen prioridad de retry, fresh se añaden detrás.
+        # 4. Mientras procesamos, mantenemos `pending` mutable en memoria; cada
+        #    descarga exitosa se descuenta. Lo no descargado al final se persiste
+        #    para que el siguiente run lo reintente.
+        pending_prev = self._load_pending()
+
+        fresh_queue = self.parse_deltas_jsonl()
+        if fresh_queue is None:
             print("Usando parser legacy de deltas.txt (no hay deltas.jsonl utilizable).")
-            queue = self.parse_deltas()
+            fresh_queue = self.parse_deltas()
+
+        queue = self._merge_pending_into_queue(pending_prev, fresh_queue or {})
 
         if not queue:
-            print("Nada nuevo que descargar en la última ejecución.")
+            self._save_pending({})  # asegura archivo limpio
+            print("Nada nuevo que descargar.")
             return
 
-        with open(ARTISTS_FILE, "r", encoding="utf-8") as f:
-            artist_urls_list = [line.strip() for line in f if line.strip()]
+        if pending_prev:
+            cnt = sum(len(c) for t in pending_prev.values() for c in t.values())
+            print(f"Reintentando {cnt} capítulos pendientes de runs anteriores.")
 
+        # `pending` es la copia mutable: empieza igual que la queue, se reduce
+        # al ir descargando con éxito, y al final se persiste con lo que quede.
+        pending = self._merge_pending_into_queue({}, queue)
+
+        artist_urls_list = []
+        if os.path.exists(ARTISTS_FILE):
+            with open(ARTISTS_FILE, "r", encoding="utf-8") as f:
+                artist_urls_list = [line.strip() for line in f if line.strip()]
         artists_index = self.load_artists_index()
 
-        for artist_name, threads_data in queue.items():
-            print(f"\nProcesando: {artist_name}")
+        try:
+            for artist_name, threads_data in queue.items():
+                print(f"\nProcesando: {artist_name}")
 
-            if not self._driver_alive():
-                if not self._recover_driver():
-                    print("   No pude recuperar el driver — abortando.")
-                    return
+                if not self._driver_alive():
+                    if not self._recover_driver():
+                        print("   No pude recuperar el driver — abortando.")
+                        return
 
-            my_url = self.resolve_artist_url(artist_name, artists_index, artist_urls_list)
+                my_url = self.resolve_artist_url(artist_name, artists_index, artist_urls_list)
 
-            if not my_url:
-                print(f"   No encontré la URL perfil para {artist_name}")
-                continue
-
-            known_threads = self.find_thread_urls_for_artist(my_url)
-
-            for thread_title, chapters in threads_data.items():
-                if thread_title not in known_threads:
-                    print(f"   Hilo no encontrado en perfil: '{thread_title}'")
+                if not my_url:
+                    print(f"   No encontré la URL perfil para {artist_name}")
+                    # Lo dejamos en pending por si más adelante el índice se actualiza.
                     continue
 
-                thread_base_url = known_threads[thread_title]
-                print(f"   Thread: {thread_title}")
+                known_threads = self.find_thread_urls_for_artist(my_url)
 
-                safe_art = self.sanitize_filename(artist_name)
-                safe_th = self.sanitize_filename(thread_title)
-
-                base_save_dir = os.path.join(LOCAL_FOLDER, safe_art, safe_th)
-                os.makedirs(base_save_dir, exist_ok=True)
-
-                print("      ... Escaneando índice de capítulos...")
-                chapter_map = self.get_all_chapter_urls(thread_base_url)
-
-                to_download = list(chapter_map.keys()) if "__ALL__" in chapters else chapters
-
-                for i, chap_name in enumerate(to_download):
-                    if chap_name not in chapter_map:
-                        print(f"      Cap no hallado: {chap_name}")
+                for thread_title, chapters in threads_data.items():
+                    if thread_title not in known_threads:
+                        print(f"   Hilo no encontrado en perfil: '{thread_title}'")
                         continue
 
-                    chap_info = chapter_map[chap_name]
-                    chap_url = chap_info["url"]
-                    cat_name = chap_info["category"]
+                    thread_base_url = known_threads[thread_title]
+                    print(f"   Thread: {thread_title}")
 
-                    safe_ch = self.sanitize_filename(chap_name)
+                    safe_art = self.sanitize_filename(artist_name)
+                    safe_th = self.sanitize_filename(thread_title)
 
-                    if cat_name.lower() in ["threadmarks", ""]:
-                        final_save_dir = base_save_dir
+                    base_save_dir = os.path.join(LOCAL_FOLDER, safe_art, safe_th)
+                    os.makedirs(base_save_dir, exist_ok=True)
+
+                    print("      ... Escaneando índice de capítulos...")
+                    chapter_map = self.get_all_chapter_urls(thread_base_url)
+
+                    if "__ALL__" in chapters:
+                        to_download = list(chapter_map.keys())
+                        # Expandir __ALL__ a nombres concretos también en pending
+                        # (no queremos persistir ["__ALL__"]).
+                        if pending.get(artist_name, {}).get(thread_title) == ["__ALL__"]:
+                            pending[artist_name][thread_title] = list(to_download)
                     else:
-                        safe_cat = self.sanitize_filename(cat_name)
-                        final_save_dir = os.path.join(base_save_dir, safe_cat)
-                        os.makedirs(final_save_dir, exist_ok=True)
+                        to_download = chapters
 
-                    if os.path.isdir(final_save_dir):
-                        existing = [
-                            fn for fn in os.listdir(final_save_dir)
-                            if fn.startswith(safe_ch) and fn.endswith(".pdf")
-                        ]
-                        if existing:
+                    for i, chap_name in enumerate(to_download):
+                        if chap_name not in chapter_map:
+                            print(f"      Cap no hallado: {chap_name}")
+                            # No lo encontramos en el índice — sacarlo del pending,
+                            # no tiene sentido reintentar lo inexistente.
+                            self._mark_done(pending, artist_name, thread_title, chap_name)
                             continue
 
-                    print(f"      [{i+1}/{len(to_download)}] ({cat_name}) Descargando: {chap_name}")
+                        chap_info = chapter_map[chap_name]
+                        chap_url = chap_info["url"]
+                        cat_name = chap_info["category"]
 
-                    try:
-                        if not self._safe_get(chap_url):
-                            print("      Saltando capítulo (network/rate-limit).")
-                            continue
-                        time.sleep(2 + random.uniform(0.5, 1.5))
-                        post_dt = self.get_post_datetime()
-                        date_suffix = f"_{post_dt}" if post_dt else ""
-                        pdf_path = os.path.join(final_save_dir, f"{safe_ch}{date_suffix}.pdf")
-                        self.isolate_and_print(pdf_path)
+                        safe_ch = self.sanitize_filename(chap_name)
+
+                        if cat_name.lower() in ["threadmarks", ""]:
+                            final_save_dir = base_save_dir
+                        else:
+                            safe_cat = self.sanitize_filename(cat_name)
+                            final_save_dir = os.path.join(base_save_dir, safe_cat)
+                            os.makedirs(final_save_dir, exist_ok=True)
+
+                        if os.path.isdir(final_save_dir):
+                            existing = [
+                                fn for fn in os.listdir(final_save_dir)
+                                if fn.startswith(safe_ch) and fn.endswith(".pdf")
+                            ]
+                            if existing:
+                                # Ya descargado en este mismo run (raro) o anterior crash.
+                                self._mark_done(pending, artist_name, thread_title, chap_name)
+                                continue
+
+                        print(f"      [{i+1}/{len(to_download)}] ({cat_name}) Descargando: {chap_name}")
+
                         try:
-                            self.driver.get("about:blank")
-                        except WebDriverException:
+                            if not self._safe_get(chap_url):
+                                print("      Saltando capítulo (network/rate-limit transitorio).")
+                                # Permanece en pending → se reintentará en el próximo run.
+                                continue
+                            time.sleep(2 + random.uniform(0.5, 1.5))
+                            post_dt = self.get_post_datetime()
+                            date_suffix = f"_{post_dt}" if post_dt else ""
+                            pdf_path = os.path.join(final_save_dir, f"{safe_ch}{date_suffix}.pdf")
+                            self.isolate_and_print(pdf_path)
+                            # Éxito: descontar de pending.
+                            self._mark_done(pending, artist_name, thread_title, chap_name)
+                            try:
+                                self.driver.get("about:blank")
+                            except WebDriverException:
+                                if not self._driver_alive():
+                                    self._recover_driver()
+                            time.sleep(2 + random.uniform(1.0, 2.0))
+                        except WebDriverException as e:
+                            print(f"      Error driver al descargar capítulo: {type(e).__name__}")
+                            # No marcamos done — queda en pending.
                             if not self._driver_alive():
-                                self._recover_driver()
-                        time.sleep(2 + random.uniform(1.0, 2.0))
-                    except WebDriverException as e:
-                        print(f"      Error driver al descargar capítulo: {type(e).__name__}")
-                        if not self._driver_alive():
-                            if not self._recover_driver():
-                                return
-                    except RuntimeError:
-                        raise
-                    except Exception as e:
-                        print(f"      Error al descargar capítulo: {e}")
+                                if not self._recover_driver():
+                                    return
+                        except RuntimeError:
+                            # Rate limit persistente — pending se guarda en el finally.
+                            raise
+                        except Exception as e:
+                            print(f"      Error al descargar capítulo: {e}")
+                            # No marcamos done — queda en pending.
+        finally:
+            self._save_pending(pending)
 
     def close(self):
         if self.driver:
