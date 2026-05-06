@@ -12,6 +12,7 @@ OUTPUT_FILE = os.path.join(LIST_DIR, "final_list.txt")
 FAILED_FILE = os.path.join(LIST_DIR, "failed_artists.json")
 ARTISTS_INDEX_FILE = os.path.join(LIST_DIR, "artists_index.json")
 SEEN_REMOVALS_FILE = os.path.join(LIST_DIR, "seen_removals.json")
+PENDING_CHAPTERS_FILE = os.path.join(LIST_DIR, "pending_chapters.json")
 
 LOCAL_FOLDER = "Artists"
 DRIVE_TARGET_FOLDER = "Artists"
@@ -26,5 +27,9 @@ ARTISTS_FOLDER_ID = os.environ.get("ARTISTS_FOLDER_ID", "").strip() or None
 
 # Safety net contra paginación infinita
 MAX_PAGES_PER_LOOP = 300
-# Backoff escalado ante rate limit detectado
+# Backoff escalado ante rate limit detectado.
+# Scraper: corto (185s total) — preferimos abortar el artista y seguir.
+# Writer: largo (~55min total) — los capítulos rate-limited no son recuperables
+# si el writer aborta antes de tiempo (history.json ya tiene el cambio del scrape).
 RATE_LIMIT_BACKOFF = [5, 15, 45, 120]
+WRITER_RATE_LIMIT_BACKOFF = [30, 120, 300, 900, 1800]
