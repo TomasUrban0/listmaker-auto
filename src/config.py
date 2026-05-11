@@ -1,9 +1,18 @@
 import os
 
-BASE_URL = "https://forum.questionablequesting.com/"
+# URL del foro a scrapear. Se inyecta vía secret/env-var FORUM_BASE_URL para no
+# acoplar el código a un foro concreto y no exponer el target en el repo público.
+BASE_URL = os.environ.get("FORUM_BASE_URL", "").strip()
+if not BASE_URL:
+    raise RuntimeError(
+        "FORUM_BASE_URL no está definida. Configúrala como secret en GitHub "
+        "Actions (Settings → Secrets → Actions) o como variable de entorno local."
+    )
+if not BASE_URL.endswith("/"):
+    BASE_URL += "/"
 
 LIST_DIR = "lists"
-COOKIES_FILE = os.path.join(LIST_DIR, "qq_verified_session.cookies")
+COOKIES_FILE = os.path.join(LIST_DIR, "session.cookies")
 ARTISTS_FILE = os.path.join(LIST_DIR, "artists.txt")
 HISTORY_FILE = os.path.join(LIST_DIR, "history.json")
 DELTA_FILE = os.path.join(LIST_DIR, "deltas.txt")
