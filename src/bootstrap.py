@@ -37,8 +37,5 @@ def _materialize(env_var: str, dest_path: str, label: str) -> bool:
 def bootstrap_state():
     """Materializa cookies y (si está disponible) artists.txt desde env-vars."""
     os.makedirs(LIST_DIR, exist_ok=True)
-    # Aceptamos el nombre nuevo (FORUM_COOKIES_B64) y el legacy (QQ_COOKIES_B64)
-    # para que la transición del rename no rompa runs en curso.
-    if not _materialize("FORUM_COOKIES_B64", COOKIES_FILE, "Cookies"):
-        _materialize("QQ_COOKIES_B64", COOKIES_FILE, "Cookies")
+    _materialize("FORUM_COOKIES_B64", COOKIES_FILE, "Cookies")
     _materialize("ARTISTS_TXT_B64", ARTISTS_FILE, "artists.txt")

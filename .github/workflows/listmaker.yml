@@ -25,10 +25,8 @@ jobs:
       GDRIVE_SA_JSON: ${{ secrets.GDRIVE_SA_JSON }}
       # URL del foro (no se hardcodea en el repo)
       FORUM_BASE_URL: ${{ secrets.FORUM_BASE_URL }}
-      # Cookies del foro. Soporta el nombre nuevo (FORUM_COOKIES_B64) y el legacy
-      # (QQ_COOKIES_B64) durante la transición; bootstrap.py prioriza el nuevo.
+      # Cookies del foro (pickled session, base64-encoded)
       FORUM_COOKIES_B64: ${{ secrets.FORUM_COOKIES_B64 }}
-      QQ_COOKIES_B64: ${{ secrets.QQ_COOKIES_B64 }}
       ARTISTS_TXT_B64: ${{ secrets.ARTISTS_TXT_B64 }}
       ARTISTS_FOLDER_ID: ${{ secrets.ARTISTS_FOLDER_ID }}
 
