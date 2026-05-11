@@ -23,7 +23,11 @@ jobs:
       GDRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GDRIVE_OAUTH_REFRESH_TOKEN }}
       # Service Account (fallback, opcional)
       GDRIVE_SA_JSON: ${{ secrets.GDRIVE_SA_JSON }}
-      # Resto
+      # URL del foro (no se hardcodea en el repo)
+      FORUM_BASE_URL: ${{ secrets.FORUM_BASE_URL }}
+      # Cookies del foro. Soporta el nombre nuevo (FORUM_COOKIES_B64) y el legacy
+      # (QQ_COOKIES_B64) durante la transición; bootstrap.py prioriza el nuevo.
+      FORUM_COOKIES_B64: ${{ secrets.FORUM_COOKIES_B64 }}
       QQ_COOKIES_B64: ${{ secrets.QQ_COOKIES_B64 }}
       ARTISTS_TXT_B64: ${{ secrets.ARTISTS_TXT_B64 }}
       ARTISTS_FOLDER_ID: ${{ secrets.ARTISTS_FOLDER_ID }}
@@ -51,7 +55,7 @@ jobs:
       # Continue-on-error: aunque scrape falle (p.ej. rate-limit, exit 3), el entry point ya
       # ejecuta save_and_compare_history en el finally, así que deltas.jsonl/history.json
       # pueden tener cambios valiosos. Queremos que upload siga corriendo para persistirlos.
-      - name: Scrape QQ
+      - name: Scrape forum
         id: scrape
         continue-on-error: true
         run: python scripts/scrape.py

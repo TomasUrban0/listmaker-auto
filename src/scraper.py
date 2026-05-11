@@ -34,7 +34,7 @@ from .config import (
 )
 
 
-class QQListMaker:
+class ListMaker:
     def __init__(self):
         print("Inicializando navegador (Chrome Headless)...")
         self.driver = None

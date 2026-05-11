@@ -40,12 +40,13 @@ lists/           estado runtime (gitignored, vive en Drive)
 
 | Secret                        | Qué es                                                       |
 |-------------------------------|--------------------------------------------------------------|
+| `FORUM_BASE_URL`              | URL base del foro a scrapear (ej: `https://example.com/`)    |
+| `FORUM_COOKIES_B64`           | `session.cookies` (pickled) codificado en base64             |
+| `ARTISTS_TXT_B64`             | `artists.txt` codificado en base64 (lista de URLs de perfil) |
 | `GDRIVE_OAUTH_CLIENT_ID`      | OAuth Client ID (Desktop app) creado en GCP                  |
 | `GDRIVE_OAUTH_CLIENT_SECRET`  | OAuth Client Secret correspondiente                          |
 | `GDRIVE_OAUTH_REFRESH_TOKEN`  | Refresh token obtenido con `scripts/auth_oauth.py` (1 vez)   |
 | `ARTISTS_FOLDER_ID`           | ID de la carpeta `Artists` en Drive                          |
-| `QQ_COOKIES_B64`              | `qq_verified_session.cookies` codificado en base64           |
-| `ARTISTS_TXT_B64`             | (opcional) `artists.txt` en base64 si no quieres versionarlo |
 | `GDRIVE_SA_JSON`              | (opcional, fallback) JSON de Service Account                 |
 
 **Por qué OAuth user y no Service Account**: las SAs no tienen cuota de

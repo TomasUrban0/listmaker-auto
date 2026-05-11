@@ -11,6 +11,9 @@ oauth_token.json
 !.env.example
 
 # --- Estado runtime (vive en Drive, no en git) ---
+# artists.txt no se versiona: contiene URLs identificativas del foro.
+# Se inyecta en CI vía secret ARTISTS_TXT_B64; en local lo regeneras a mano.
+lists/artists.txt
 lists/history.json
 lists/deltas.txt
 lists/deltas.jsonl

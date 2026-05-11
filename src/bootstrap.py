@@ -1,7 +1,7 @@
 """Materializa archivos de estado desde env-vars base64.
 
-En CI el primer run no tiene `lists/qq_verified_session.cookies` (Drive vacío) —
-las cookies se inyectan vía secret QQ_COOKIES_B64. Lo mismo aplica opcionalmente
+En CI el primer run no tiene `lists/session.cookies` (Drive vacío) —
+las cookies se inyectan vía secret FORUM_COOKIES_B64. Lo mismo aplica opcionalmente
 a `artists.txt` vía ARTISTS_TXT_B64.
 
 Llamado desde los entry points de scrape/write antes de instanciar el bot.
@@ -37,5 +37,8 @@ def _materialize(env_var: str, dest_path: str, label: str) -> bool:
 def bootstrap_state():
     """Materializa cookies y (si está disponible) artists.txt desde env-vars."""
     os.makedirs(LIST_DIR, exist_ok=True)
-    _materialize("QQ_COOKIES_B64", COOKIES_FILE, "Cookies")
+    # Aceptamos el nombre nuevo (FORUM_COOKIES_B64) y el legacy (QQ_COOKIES_B64)
+    # para que la transición del rename no rompa runs en curso.
+    if not _materialize("FORUM_COOKIES_B64", COOKIES_FILE, "Cookies"):
+        _materialize("QQ_COOKIES_B64", COOKIES_FILE, "Cookies")
     _materialize("ARTISTS_TXT_B64", ARTISTS_FILE, "artists.txt")

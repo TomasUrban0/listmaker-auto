@@ -1,16 +1,16 @@
-"""Entry point: scraping de perfiles QQ. Detecta cambios y los escribe a deltas.jsonl."""
+"""Entry point: scraping de perfiles del foro. Detecta cambios y los escribe a deltas.jsonl."""
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.bootstrap import bootstrap_state
-from src.scraper import QQListMaker
+from src.scraper import ListMaker
 
 
 def main():
     bootstrap_state()
-    bot = QQListMaker()
+    bot = ListMaker()
     exit_code = 0
     try:
         if not bot.load_cookies():

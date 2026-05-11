@@ -32,7 +32,7 @@ from .config import (
 )
 
 
-class QQWriter:
+class Writer:
     def __init__(self):
         print("Inicializando Writer (PDF Generator Headless)...")
         self.driver = None

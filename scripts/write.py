@@ -5,12 +5,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.bootstrap import bootstrap_state
-from src.writer import QQWriter
+from src.writer import Writer
 
 
 def main():
     bootstrap_state()
-    bot = QQWriter()
+    bot = Writer()
     exit_code = 0
     try:
         bot.run()
